@@ -141,7 +141,7 @@ const nuevoPassword = async(req,res)=>{
 const obtenerPerfil = (req,res)=>{
     const {usuario} = req
 
-    res.json(usuario)
+    return res.status(200).json(usuario)
 }
 
 

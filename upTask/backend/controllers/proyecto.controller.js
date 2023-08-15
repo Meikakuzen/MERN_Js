@@ -1,4 +1,5 @@
 import Proyecto from '../models/Proyecto.model.js'
+import Tarea from '../models/Tarea.model.js'
 
 
 const obtenerProyectos = async (req,res)=>{
@@ -23,7 +24,10 @@ const obtenerProyecto = async (req,res)=>{
         return res.status(403).json({msg: error.message})
     }
 
-    res.json(proyecto)
+    const tareas = await Tarea.find().where('proyecto').equals(proyecto._id)
+
+    return res.status(200).json({proyecto, tareas})
+    return res.status(200).json(tareas)
 }
 
 const crearProyecto = async (req,res)=>{
@@ -89,6 +93,21 @@ const eliminarProyecto = async(req,res)=>{
         console.log(error)
     }
 }
+
+/*const obtenerTareas = async (req,res)=>{
+    const {id} = req.params
+
+    const existeProyecto = await Proyecto.findById(id)
+
+    if(!existeProyecto){
+        const error = new Error("El proyecto no existe")
+        return res.status(404).json({msg: error.message})
+    }
+
+    const tareas = await Tarea.find().where('proyecto').equals(id)
+
+    res.json(tareas)
+}*/
 
 const agregarColaborador = (req,res)=>{
     console.log('Agregar colaborador')

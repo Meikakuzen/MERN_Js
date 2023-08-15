@@ -1,4 +1,4 @@
-# 01 UpTASK
+# 01 MERN UPTASK
 
 - Creo dos carpetas, una para el fornt otra para el back
 - En el back creo el package.json e instalo
@@ -984,3 +984,288 @@ const eliminarProyecto = async(req,res)=>{
     }
 }
 ~~~
+
+## Modelo de Tareas
+
+- En prioridad solo voy a aceptar los valores del enum
+- Lo asocio al proyecto con mongoose.Schema.Types.ObjectId, le paso en la ref el nombre del modelo
+
+~~~js
+import mongoose from 'mongoose'
+
+const tareaSchema = mongoose.Schema({
+
+  nombre:{
+    type: String,
+    trim: true,
+    required: true
+  },
+  descripcion: {
+    type: String,
+    trim: true,
+    required: true
+  },
+  estado:{
+    type: Boolean,
+    default: false
+  },
+  fechaDeEntrega: {
+    type: Date,
+    required: true,
+    default: Date.now()
+  },
+  prioridad:{
+    type: String,
+    required: true,
+    enum: ['Baja', 'Media', 'Alta']
+  },
+  proyecto:{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Proyecto"
+  }
+
+    
+}, {
+    timestamps: true
+})
+
+const Tarea = mongoose.model("Tarea", tareaSchema)
+
+export default Tarea
+~~~
+
+- Creo el enrutado y el controlador. Agrego el router a app.js
+- tarea.routes
+
+~~~js
+import {Router} from 'express'
+import tareaController from '../controllers/tarea.controller.js'
+import checkAuth from '../middlewares/checkAuth.middleware.js'
+import { comprobarIdMongo } from '../middlewares/comprobarIdMongo.middleware.js'
+
+const router = Router()
+
+router.route("/:id")
+        .get(checkAuth, comprobarIdMongo, tareaController.getTarea)
+        .put(checkAuth, comprobarIdMongo, tareaController.editarTarea)
+        .delete(checkAuth, comprobarIdMongo, tareaController.editarTarea)
+        
+router.post("/", checkAuth, tareaController.crearTarea)
+router.post("/estado/:id", checkAuth, comprobarIdMongo, tareaController.cambiarEstado)
+
+export default router
+~~~
+
+- tarea.controller.js
+
+~~~js
+
+const getTarea = (req,res)=>{
+    console.log("GET tarea")
+}
+
+const crearTarea = (req,res)=>{
+    console.log("POST tarea")
+}
+
+const editarTarea = (req,res)=>{
+    console.log("PUT tarea")
+}
+
+const eliminarTarea = (req,res)=>{
+    console.log("DELETE tarea")
+}
+
+const cambiarEstado = (req,res)=>{
+    console.log("cambiar estado")
+}
+
+export default{
+    getTarea,
+    crearTarea,
+    editarTarea,
+    eliminarTarea,
+    cambiarEstado
+}
+~~~
+
+- En app.js importo el router. Lo renombro como quiera porque lo exporto por default
+
+> app.use('/api/tareas', tareaRoutes)
+
+- Para agregar tareas apunto con POST a http://localhost:3000/api/tareas 
+- En ThunderClient le paso el jwt en Auth / Bearer y en el body el objeto que cumpla con el modelo Tarea
+
+~~~json
+{
+  "nombre": "elegir colores",
+  "descripcion": "elegir colores para el proyecto",
+  "prioridad": "Media",
+  "proyecto": "64db1c41fa5bf8c889ca8adb"
+}
+~~~
+
+- Voy al controlador
+
+~~~js
+const crearTarea = async (req,res)=>{
+    const {proyecto}= req.body
+
+    const existeProyecto = await Proyecto.findById(proyecto)
+
+    //compruebo que el proyecto existe
+    if(!proyecto){
+        const error = new Error("El proyecto no existe")
+        return res.status(404).json({msg: error.message})
+    }   
+
+    //compruebo que quien crea la tarea es el mismo que creó el proyecto
+    if(req.usuario._id.toString() !== existeProyecto.creador.toString()){
+        const error = new Error("No tienes los permisos necesarios")
+        return res.status(403).json({msg: error.message})
+    }
+
+    try {
+            //puedo usar new Tarea o Tarea.create
+        const tareaAlmacenada = await Tarea.create(req.body)
+        return res.status(200).json(tareaAlmacenada)
+        
+    } catch (error) {
+     console.log(error)   
+    }
+}
+~~~
+
+- Más adelante vamos a implementar que las personas que están como colaboradoras SI puedan cambiar EL ESTADO de las tareas
+- Para obtener una tarea requiero un id
+- La manera menos eficiente de saber el creador del proyecto sería desestructurando proyecto de tarea y buscando en la db
+- Pero puedo usar el **populate** para que también me devuelva la info de proyecto
+
+~~~js
+const getTarea = async (req,res)=>{
+    const {id} = req.params
+
+    const tarea =  await Tarea.findById(id).populate("proyecto")
+
+    if(!tarea){
+        const error = new Error("No se encontró la tarea")
+        return res.status(404).json({msg: error.message})
+    }
+
+    if(tarea.proyecto.creador.toString() !== req.usuario._id.toString()){
+        const error = new Error("Acción no válida")
+        return res.status(403).json({msg: error.message})
+    }
+
+   return res.status(200).json(tarea)
+}
+~~~
+
+- Para actualizar tarea son las mismas comprobaciones
+
+~~~js
+const editarTarea = async (req,res)=>{
+    const {id} = req.params
+
+    const tarea =  await Tarea.findById(id).populate("proyecto")
+
+    if(!tarea){
+        const error = new Error("No se encontró la tarea")
+        return res.status(404).json({msg: error.message})
+    }
+
+    if(tarea.proyecto.creador.toString() !== req.usuario._id.toString()){
+        const error = new Error("Acción no válida")
+        return res.status(403).json({msg: error.message})
+    }
+
+    try {
+       const tareaActualizada =  await Tarea.findByIdAndUpdate(id, req.body, {new: true})
+        return res.status(200).json(tareaActualizada)
+    } catch (error) {
+        console.log(error)
+    }
+}
+~~~
+
+- Para eliminar
+
+~~~js
+const eliminarTarea = async (req,res)=>{
+    const {id} = req.params
+
+    const tarea =  await Tarea.findById(id).populate("proyecto")
+
+    if(!tarea){
+        const error = new Error("No se encontró la tarea")
+        return res.status(404).json({msg: error.message})
+    }
+
+    if(tarea.proyecto.creador.toString() !== req.usuario._id.toString()){
+        const error = new Error("Acción no válida")
+        return res.status(403).json({msg: error.message})
+    }
+
+    try {
+       await tarea.deleteOne()
+        return res.status(200).json({msg: "Tarea eliminada correctamente!"})
+    } catch (error) {
+        console.log(error)
+    }
+}
+~~~
+
+- Para obtener tareas lo voy a hacer desde proyecto.controller pero bien se podría hacer desde tarea.controller
+- Una manera sería esta apuntando a http://localhost:3000/api/proyectos/tareas/64db1c41fa5bf8c889ca8adb
+
+~~~js
+const obtenerTareas = async (req,res)=>{
+    const {id} = req.params
+
+    const existeProyecto = await Proyecto.findById(id)
+
+    if(!existeProyecto){
+        const error = new Error("El proyecto no existe")
+        return res.status(404).json({msg: error.message})
+    }
+
+    const tareas = await Tarea.find().where('proyecto').equals(id)
+
+    res.json(tareas)
+}
+~~~
+
+- Para obtener todas las tareas de un proyecto por su id, para cuando esté en el frontend me aparezcan al clicar en un proyecto
+- Para agregar las tareas a proyecto con proyecto.tareas no me va a funcionar porque es un objeto inmutable
+- Puedo devolverlo en un mismo objeto
+
+~~~js
+const obtenerProyecto = async (req,res)=>{
+    const {id} = req.params
+
+    const {usuario} = req
+
+    const proyecto = await Proyecto.findById(id)
+
+    if(!proyecto){
+        const error = new Error("Proyecto no encontrado")
+        return res.status(404).json({msg: error.message})
+    }
+
+    if(proyecto.creador.toString() !== usuario._id.toString()){
+        const error = new Error("Acción no válida")
+        return res.status(403).json({msg: error.message})
+    }
+
+    const tareas = await Tarea.find().where('proyecto').equals(proyecto._id)
+
+    return res.status(200).json({proyecto, tareas})
+}
+~~~
+
+- Elimino obtenerTareas
+- Faltan algunas cosas relacionadas con el backend, sobretodo con colaboradores
+- En Proyecto tengo un arreglo de colaboradores. Va a almacenar el id de cada colaborador, y despues con un populate podemos llenar toda esa información
+- Si agregara un arreglo de tareas, en createTarea, antes de almacenar la nueva tarea debería agregar el modelo de Proyecto e ir almacenando el id para que el populate funcione
+- También hay otras cosas como que voy a enviar un email de confirmación cuando cree un usuario.
+- Entonces, el backend no está 100% finalizado, pero se queda así por ahora.
