@@ -15,9 +15,9 @@ const postUsuario = async (req,res)=>{
     try {
         const usuario = new Usuario(req.body)
         usuario.token = generarId() 
-        const usuarioAlmacenado = await usuario.save()
+        await usuario.save()
         
-        res.json(usuarioAlmacenado)
+        res.json({msg: "Usuario creado correctamente. revisa tu email"})
         
     } catch (error) {
         console.log(error)
