@@ -515,5 +515,318 @@ try {
   - Tenemos las ruta de la petición visible, no seteada como variable de entorno
 -----
 
-## Solucionando estas cositas
+## Solucionando estas cositas (lección 471)
 
+- Para vaciar el formulario seteo los states a string vacío en el try del handleSubmit
+
+~~~js
+try {
+      const {data}  = await axios.post('http://localhost:3000/api/usuarios', {nombre, password, email})  
+      setAlerta({
+      msg: data.msg,
+      error: false
+      })
+      setNombre("")
+      setEmail("")
+      setPassword("")
+      setRepetirPassword("")
+} catch (error) {
+    setAlerta({
+      msg: error.response.data.msg,
+      error: true
+    })
+}
+~~~
+
+- Las conexiones del whiteList en app.js para CORS debo meterlas en variables de entorno en .env
+- .env
+
+~~~
+STRING_CONNECTION_CORS1=http://127.0.0.1:5173
+STRING_CONNECTION_CORS2=http://localhost:5173
+~~~
+
+- Uso process.env para colocarlas en la whiteList
+- En el caso de VITE es import.meta.env.VARIABLE_DE_ENTORNO
+- app.js
+
+~~~js
+const whitelist = [process.env.STRING_CONNECTION_CORS1, process.env.STRING_CONNECTION_CORS2]
+
+const corsOptions ={
+    origin: function(origin, callback){
+        if(whitelist.includes(origin)){
+            callback(null, true)
+        }else{
+            callback(new Error("Error de Cors"))
+        }
+    }
+}
+~~~
+
+- Ahora en el frontend creo la variable de entorno para los strings que apuntan a la API
+- Debo añadir VITE_ al inicio
+
+~~~
+VITE_BACKEND_URL=http://localhost:3000
+~~~
+
+- La coloco en el try del handleSubmit en Registrar.jsx
+
+~~~js
+const {data}  = await axios.post(`${import.meta.env.VITE_BACKEND_URL}/api/usuarios`, {nombre, password, email}) 
+~~~
+--------
+
+## Instalando y configurando NodeMailer para mail de confirmación
+
+- Recuerda que hicimos el endpoint confirmar/:token
+- Tenemos que enviarle ese token al email para que pueda confirmar la cuenta
+- Para enviar emails con node vamos a usar el paquete **nodemailer** en el backend
+
+> npm i nodemailer
+
+- Necesitamos un servidor de emails. Podemos usar el servicio que provee **mailtrap**
+- Creo la cuenta, creo el inbox UpTASK MERN
+- Si entro en el inbox me ofrece las credenciales SMTP, selecciono NODE (nodemailer)
+- Me devuelve algo así
+
+~~~js
+var transport = nodemailer.createTransport({
+  host: "sandbox.smtp.mailtrap.io",
+  port: 2525,
+  auth: {
+    user: "*******abc",
+    pass: "*******32a"
+  }
+});
+~~~
+
+- Creo un helper emails.js donde estará olvidé mi password y confirmar cuenta
+- Se añadirá un tercero para enviar confirmación cuando se publique un proyecto
+- Creo la arrow function emailRegistro que va a tomar el nombre, el email y el toke (lo llamaré datos)
+- La llamo en el controlador de crear usuario, después de salvar el usuario
+- Le paso nombre, email y token dentro de un objeto
+
+~~~js
+const postUsuario = async (req,res)=>{
+    const {email} = req.body
+    const existeUsuario = await Usuario.findOne({email})
+
+    if(existeUsuario){
+        const error = new Error("Usuario ya registrado")
+
+        return res.status(400).json({msg: error.message})
+    }
+
+    try {
+        const usuario = new Usuario(req.body)
+        usuario.token = generarId() 
+        await usuario.save()
+
+        emailRegistro({          //le paso los datos a emailRegistro
+            email: usuario.email,
+            nombre: usuario.nombre,
+            token: usuario.token
+        })
+        
+        res.json({msg: "Usuario creado correctamente. revisa tu email"})
+        
+    } catch (error) {
+        console.log(error)
+    }
+}
+~~~
+
+- En emailRegistro uso el método sendMail del transport que me ha facilitado nodeMailer
+- El href tiene que apuntar al endpoint de confirmar cuenta
+
+~~~js
+import nodemailer from 'nodemailer'
+
+const transport = nodemailer.createTransport({
+    host: "sandbox.smtp.mailtrap.io",
+    port: 2525,
+    auth: {
+      user: "*********aabc",
+      pass: "**********ea4"
+    }
+  });
+
+export const emailRegistro = async(datos)=>{
+    const {email, nombre, token} = datos
+    
+    const info = await transport.sendMail({
+      from: "UpTASK - Administrador de proyectos <cuentas@uptask.com",
+      to: email,
+      subject: "UpTASK - Confirma tu cuenta",
+      text: "Comprueba tu cuenta en UpTASK",
+      html: `<p> Hola, ${nombre} </p>
+     <p>Comprueba tu cuenta en UpTASK. Tu cuenta ya está casi lista, solo debes hacer clic en el siguiente enlace: </p>
+     <a href="${process.env.STRING_CONNECTION_CORS2}/confirmar/${token}">Comprobar cuenta</a>
+     <p>Si tu no creaste esta cuenta, puedes ignorar el mensaje </p>
+      `    
+    })
+}
+~~~
+
+- **Ha funcionado con la variable de entorno que lleva localhost en lugar de 127.0.0.1**
+- Me lleva a la página de ConfirmarCuenta del frontend, **tengo el token en la url**
+-----
+
+## Confirmando la cuenta
+
+- Importo useEffect para leer la url necesitamos que el código se ejecute una vez
+- El useState será para mostrar el componente Alerta
+- Importo useParams de react-router-dom para leer la url y Link para redireccionar
+- Importo axios y el componente Alerta
+- Si voy a app.js puedo ver que el path de confirmarCuenta es localhost:3000/api/usuarios/confirmar/:token
+- Puedo usar este :token con useParams para extraer el token
+- Si hago un console.log de params me devuelve un objeto con el :id
+
+~~~js
+const params = useParams()
+
+console.log(params)
+~~~
+
+- Desestructuro el token de params
+- Necesito el useEffect para asegurarme de que el código se ejecute cuando el componente esté listo al menos una vez
+- Es una petición get al backend. Al ser get no necesito especificarlo en axios ya que es por default
+
+~~~js
+import { useState, useEffect } from "react"
+import { useParams, Link } from "react-router-dom"
+import  axios  from "axios"
+import  Alerta from '../components/Alerta'
+
+const ConfirmarCuenta = () => {
+
+  const params = useParams()
+  const {token} = params
+  
+  const [alerta, setAlerta] = useState({})
+
+  useEffect(()=>{
+    const confirmarCuenta = async()=>{
+      try {
+        const url =`http://localhost:3000/api/usuarios/confirmar/${token}`
+        const {data}= await axios(url)
+
+        setAlerta({
+          msg: data.msg,
+          error: false
+        })
+
+      } catch (error) {
+        setAlerta({
+          msg: error.response.data.msg,
+          error: true
+        })
+      }
+    }
+    confirmarCuenta()
+  }, [])
+
+  const {msg} = alerta
+
+  return (
+    <>
+    <h1 className="text-orange-600 font-black text-6xl capitalize">Confirma tu cuenta y empieza a crear tus
+    <span className="text-slate-700"> proyectos</span></h1>
+    <div>{msg && <Alerta alerta={alerta} />} </div>
+
+  </>
+  )
+}
+
+export default ConfirmarCuenta
+~~~
+
+- Creo otro state para renderizar el link al Login
+- Lo inicio en false porque la cuenta inicia como no confirmada
+
+~~~js
+const [cuentaConfirmada, setCuentaConfirmada] = useState(false)
+~~~
+
+- Coloco el setCuentaConfirmada(true) dentro del try una vez se ha confirmado la cuenta
+
+~~~js
+useEffect(()=>{
+    const confirmarCuenta = async()=>{
+      try {
+        const url =`http://localhost:3000/api/usuarios/confirmar/${token}`
+        const {data}= await axios(url)
+        setAlerta({
+          msg: data.msg,
+          error: false
+        })
+        setCuentaConfirmada(true)
+      }
+      (...)}})
+~~~
+
+- Renderizo el Link condicionalmente
+
+~~~js
+  return (
+    <>
+    <h1 className="text-orange-600 font-black text-6xl capitalize">Confirma tu cuenta y empieza a crear tus
+    <span className="text-slate-700"> proyectos</span></h1>
+    <div className="mt-20 md:mt-10 shadow-lg px-5 py-10 rounded-xl bg-white"
+    >{msg && <Alerta alerta={alerta} />}
+      {cuentaConfirmada &&    
+         <Link to="/"
+              className="block text-center my-5 text-slate-500 uppercase text-sm"
+        >Inicia sesión</Link>}
+     </div>
+  </>
+  )
+~~~
+
+## NOTA: quito el StrictMode en el main para que no haga el doble render y me de error
+
+- main.js
+
+~~~js
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <>
+    <App />
+  </>
+)
+~~~
+
+- Para quitar el error de Cannot set properties of null (setting 'confirmado') voy al controlador
+
+~~~js
+const confirmarCuenta = async (req,res)=>{
+    const {token} = req.params
+
+    const usuarioConfirmar = await Usuario.findOne({token})
+
+    
+    if(!usuarioConfirmar){
+        const error = new Error("Token no valido")
+        res.status(400).json({msg: error.message})
+    }
+    
+    if(usuarioConfirmar === null) return
+    
+
+    try {
+        usuarioConfirmar.confirmado = true
+        usuarioConfirmar.token = ""
+        await usuarioConfirmar.save()
+        res.json({msg: "Usuario confirmado correctamente"})
+
+    } catch (error) {
+        console.log(error)
+    }
+}
+~~~
+-----
+
+## Primeros pasos con Reestablecer Password (475)
+
+- 

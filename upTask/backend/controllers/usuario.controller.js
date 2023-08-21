@@ -1,6 +1,7 @@
 import Usuario from '../models/Usuario.model.js'
 import { generarId } from '../helpers/generar-id.js'
 import { generarJWT } from '../helpers/generarJWT.js'
+import { emailRegistro } from '../helpers/emails.js'
 
 const postUsuario = async (req,res)=>{
     const {email} = req.body
@@ -16,6 +17,12 @@ const postUsuario = async (req,res)=>{
         const usuario = new Usuario(req.body)
         usuario.token = generarId() 
         await usuario.save()
+
+        emailRegistro({
+            email: usuario.email,
+            nombre: usuario.nombre,
+            token: usuario.token
+        })
         
         res.json({msg: "Usuario creado correctamente. revisa tu email"})
         
@@ -66,10 +73,14 @@ const confirmarCuenta = async (req,res)=>{
 
     const usuarioConfirmar = await Usuario.findOne({token})
 
+    
     if(!usuarioConfirmar){
         const error = new Error("Token no valido")
         res.status(400).json({msg: error.message})
     }
+    
+    if(usuarioConfirmar === null) return
+    
 
     try {
         usuarioConfirmar.confirmado = true

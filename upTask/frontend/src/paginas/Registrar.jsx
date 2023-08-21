@@ -38,11 +38,15 @@ const Registrar = () => {
             setAlerta({})
             
             try {
-                 const {data}  = await axios.post('http://localhost:3000/api/usuarios', {nombre, password, email})  
+                 const {data}  = await axios.post(`${import.meta.env.VITE_BACKEND_URL}/api/usuarios`, {nombre, password, email})  
                  setAlerta({
                   msg: data.msg,
                   error: false
                  })
+                 setNombre("")
+                 setEmail("")
+                 setPassword("")
+                 setRepetirPassword("")
             } catch (error) {
                 setAlerta({
                   msg: error.response.data.msg,
