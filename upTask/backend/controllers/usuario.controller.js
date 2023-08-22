@@ -1,7 +1,7 @@
 import Usuario from '../models/Usuario.model.js'
 import { generarId } from '../helpers/generar-id.js'
 import { generarJWT } from '../helpers/generarJWT.js'
-import { emailRegistro } from '../helpers/emails.js'
+import { emailOlvidePassword, emailRegistro } from '../helpers/emails.js'
 
 const postUsuario = async (req,res)=>{
     const {email} = req.body
@@ -100,13 +100,19 @@ const olvidePassword = async (req,res)=>{
     const usuario = await Usuario.findOne({email})
 
     if(!usuario){
-        const error = new Error("Usuario no encontrado")
+        const error = new Error("Usuario no existe")
         res.status(400).json({msg: error.message})
     }
 
     try {
         usuario.token = generarId()
         await usuario.save()
+
+        emailOlvidePassword({
+            email: email,
+            nombre: usuario.nombre,
+            token: usuario.token           
+        })
         res.json({msg: 'Hemos enviado un email con las instrucciones'})
         
     } catch (error) {
@@ -121,10 +127,10 @@ const comprobarToken = async (req,res)=>{
 
     if(!tokenValido){
         const error = new Error("Token no válido")
-        res.status(400).json({msg: error.message})
+        return res.status(400).json({msg: error.message})
     }
 
-    res.json({msg: "Token válido, usuario existe"})
+   return res.json({msg: "Token válido, usuario existe"})
 }
 
 const nuevoPassword = async(req,res)=>{

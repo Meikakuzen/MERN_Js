@@ -829,4 +829,513 @@ const confirmarCuenta = async (req,res)=>{
 
 ## Primeros pasos con Reestablecer Password (475)
 
-- 
+- Voy a enviar un email para reescribir el password y recuperar la cuenta
+- Voy al componente OlvidePassword
+- Creo el state de email, le añado el value y el onChange al input, creo la función handleSubmit y se la paso al onSubmit del form
+- Importo el componente Alerta, creo un state como objeto vacío, hago la validación en el handleSubmit de si viene el email vacío o es menor a 6 caracteres muestre la alerta
+- Se podría colocar una expresión regular para validar el email
+
+~~~js
+const OlvidePassword = () => {
+
+  const [email, setEmail]= useState("")
+  const [alerta, setAlerta] = useState({})
+
+  const handleSubmit = async(e)=>{
+    e.preventDefault()
+    if(email === "" || email.length < 6){
+      setAlerta({
+        msg: "El email es obligatorio",
+        error: true
+      })
+    }
+  }
+
+  const {msg} = alerta
+
+  return (
+    <>
+    <h1 className="text-orange-600 font-black text-6xl capitalize">Recupera tu
+    <span className="text-slate-700"> password</span></h1>
+
+    {msg && <Alerta  alerta={alerta} />}
+
+    <form onSubmit={handleSubmit} 
+    className= "mt-10 bg-white shadow rounded-lg p-3">
+      <div className="my-3">
+        <label className="uppercase text-gray-600 block text-xl font-bold"
+              htmlFor="email">Email</label>
+        <input 
+               value={email}
+               onChange={e=>setEmail(e.target.value)}
+               type="email"
+               id="email"
+               placeholder="Email de registro"
+               className="w-full mt-3 p-3 border rounded-xl bg-gray-50"  />
+      </div>
+      (...)
+  )
+~~~
+
+## Enviando email y token para reestablecer password
+
+- Uso un try catch en el handleSubmit
+- En el post le paso la url, y los datos tienen que ser un JSON por lo que le paso un objeto con el email
+- Con axios el error está en error.response
+
+~~~js
+ try {
+      const {data} = await axios.post(`${import.meta.env.VITE_BACKEND_URL}/api/usuarios/olvide-password`, {email})
+    } catch (error) {
+      console.log(error.response)
+    }
+~~~
+
+- Si le paso un email que no existe me devuelve en consola "El usuario no existe"
+- Esto es porque así lo tengo configurado en el controlador
+- usuario.controller
+
+~~~js
+const olvidePassword = async (req,res)=>{
+
+    const {email} = req.body
+
+    const usuario = await Usuario.findOne({email})
+
+    if(!usuario){
+        const error = new Error("Usuario no existe")
+        res.status(400).json({msg: error.message})
+    }
+
+    try {
+        usuario.token = generarId()
+        await usuario.save()
+        res.json({msg: 'Hemos enviado un email con las instrucciones'})
+        
+    } catch (error) {
+        console.log(error)
+    }
+}
+~~~
+
+- Para leer este error y mostrar una alerta uso **error.response.data.msg**
+- Si todo va bien me genera un nuevo token
+- Hago la alerta para notificarlo
+
+~~~js
+try {             //TODO: mover hacia un cliente axios
+  const {data} = await axios.post(`${import.meta.env.VITE_BACKEND_URL}/api/usuarios/olvide-password`, {email})
+  setAlerta({
+    msg: data.msg,
+    error: false
+  })
+} catch (error) {
+  setAlerta({
+    msg: error.response.data.msg,
+    error: true
+  })
+}
+~~~
+
+- Va a ser en el try catch del controlador donde voy a enviar el email
+- Va a ser muy similar a la función de emailRegistro en helpers/emails.js
+
+~~~js
+import nodemailer from 'nodemailer'
+
+const transport = nodemailer.createTransport({
+    host: "sandbox.smtp.mailtrap.io",
+    port: 2525,
+    auth: {
+      user: "********abc",  //TODO:pasar a variables de entorno
+      pass: "*********a4"
+    }
+  });
+
+export const emailOlvidePassword = async(datos)=>{
+  const {email, nombre, token} = datos
+  
+  const info = await transport.sendMail({
+    from: "UpTASK - Administrador de proyectos <cuentas@uptask.com",
+    to: email,
+    subject: "UpTASK - Recupera tu password",
+    text: "Comprueba tu cuenta en UpTASK",
+    html: `<p> Hola, ${nombre} </p>
+   <p>Recupera tu password de UpTASK. Para ello, solo debes hacer clic en el siguiente enlace: </p>
+   <a href="${process.env.STRING_CONNECTION_CORS2 }/olvide-password/${token}">Recuperar password</a>
+   <p>Si no quieres recuperar tu password, puedes ignorar el mensaje </p>
+    `    
+  })
+}
+~~~
+
+- En el usuario.controller le paso los datos a la función
+
+~~~js
+const olvidePassword = async (req,res)=>{
+
+    const {email} = req.body
+
+    const usuario = await Usuario.findOne({email})
+
+    if(!usuario){
+        const error = new Error("Usuario no existe")
+        res.status(400).json({msg: error.message})
+    }
+
+    try {
+        usuario.token = generarId()
+        await usuario.save()
+
+        emailOlvidePassword({
+            email: email,
+            nombre: usuario.nombre,
+            token: usuario.token           
+        })
+        res.json({msg: 'Hemos enviado un email con las instrucciones'})
+        
+    } catch (error) {
+        console.log(error)
+    }
+}
+~~~
+
+- Esto me envia un mail a mailtrap con el link que me lleva al componente NuevoPassword
+----
+
+## Validando token para resetear password
+
+- Ahora debo leer el token y hacer la consulta a la API
+- Voy a NuevoPassword, importo useState, importo Link y useParams de react-router-dom, axios y Alerta 
+- En el useEffect apunto a la API de olvide-password para comprobar el token
+- Ejecuto la función!
+
+~~~js
+const NuevoPassword = () => {
+
+  const params = useParams()
+  const {token} = params
+
+  const [alerta, setAlerta] = useState({})
+
+  useEffect(()=>{
+    const comprobarToken= async()=>{
+      try {
+       const {data}= await axios(`${import.meta.env.VITE_BACKEND_URL}/api/usuarios/olvide-password/${token}`)
+        console.log(data)
+      } catch (error) {
+          setAlerta({
+          msg: error.response.data.msg,
+          error: true
+        })
+      }
+    }
+    comprobarToken()
+  }, [])
+
+
+  return (...) }
+~~~
+
+- Si el token es válido el console.log de la data me devuelve Token válido y el usuario existe
+- Estoy apuntando a esta ruta
+
+> router.get('/olvide-password/:token', usuarioController.comprobarToken)
+
+- Que tiene este controlador
+
+~~~js
+const comprobarToken = async (req,res)=>{
+    const {token} = req.params
+
+    const tokenValido = await Usuario.findOne({token})
+
+    if(!tokenValido){
+        const error = new Error("Token no válido")
+       return res.status(400).json({msg: error.message})
+    }
+
+    return res.json({msg: "Token válido, usuario existe"})
+}
+~~~
+
+- No me interesa el mensaje de token válido
+- Solo si el token es válido mostrará el formulario
+- Para ello uso un state y renderizo el form condicionalmente
+
+~~~js
+import { useState, useEffect } from "react"
+import { Link, useParams } from "react-router-dom"
+import axios from 'axios'
+import Alerta from '../components/Alerta'
+
+const NuevoPassword = () => {
+
+  const params = useParams()
+  const {token} = params
+
+  const [alerta, setAlerta] = useState({})
+  const [tokenValido, setTokenValido] = useState(false)
+
+  useEffect(()=>{
+    const comprobarToken= async()=>{
+      try {
+       await axios(`${import.meta.env.VITE_BACKEND_URL}/api/usuarios/olvide-password/${token}`)
+        setTokenValido(true)
+      } catch (error) {
+        setAlerta({
+          msg: error.response.data.msg,
+          error: true
+        })
+      }
+    }
+    comprobarToken()
+  }, [])
+
+  const {msg} = alerta
+  return (
+    <>
+    <h1 className="text-orange-600 font-black text-6xl capitalize">Escribe tu nuevo
+    <span className="text-slate-700"> password</span></h1>
+    {msg && <Alerta alerta={alerta} />}
+    
+    {tokenValido && <form className= "mt-10 bg-white shadow rounded-lg p-3">
+      
+      <div className="my-5">
+        <label className="uppercase text-gray-600 block text-xl font-bold"
+              htmlFor="password">Nuevo password</label>
+        <input type="password"
+               id="password"
+               placeholder="Escribe tu nuevo password"
+               className="w-full mt-3 p-3 border rounded-xl bg-gray-50"  />
+      </div>
+
+      <input type="submit"
+              value="Guardar Nuevo Password"
+              className="bg-orange-600 w-full mb-5 text-white uppercase font-bold rounded p-3 hover:cursor-pointer
+              hover:bg-orange-700 transition-colors" />
+    </form>}
+  </>
+  )
+}
+
+export default NuevoPassword
+~~~
+
+- Creo un nuevo state para el password
+- Coloco el state en el value del input, y en el onChange (e)=>setPassword(e.target.value)
+- Creo el handleSubmit, se lo coloco en el onSubmit del form
+- Ahora debo apuntar a la API
+
+> router.post('/nuevo-password/:token', usuarioController.nuevoPassword)
+
+- El controlador de nuevoPassword es
+
+~~~js
+const nuevoPassword = async(req,res)=>{
+    const {token} = req.params
+    const {password} = req.body
+
+    const usuario = await Usuario.findOne({token})
+
+    if(!usuario){
+        const error = new Error("Token no válido")
+        res.status(400).json({msg: error.message})
+    }
+
+    try {
+        usuario.password = password
+        usuario.token = ""
+        await usuario.save()
+        res.json({msg: "Password modificado correctamente"})
+        
+    } catch (error) {
+        console.log(error)
+    }
+}
+~~~
+
+- Tengo seteado el input con el state password y el setPassword en el onChange, y en el form tengo el handleSubmit en el onSubmit
+- En el handleSubmit hago la validación del password, y en un try catch apunto a la API para almacenar el password
+
+~~~js
+ const handleSubmit=async (e)=>{
+    e.preventDefault()
+    
+    if(password.length < 6){
+      setAlerta({
+        msg: "el password debe contener al menos 6 caracteres",
+        error: true
+      })
+    }
+
+    try {
+      const {data}= await axios.post(`${import.meta.env.VITE_BACKEND_URL}/api/usuarios/nuevo-password/${token}`, {password})
+      setAlerta({
+        msg: data.msg,
+        error: false
+      })
+      
+    } catch (error) {
+      setAlerta({
+        msg: error.response.data.msg,
+        error: true
+      })
+    }
+  }
+~~~
+
+- Muevo a variables de entorno la configuración de nodemailer y los endpoints en el fromt que no estén con variables de entorno
+- En el frontend debo usar import.meta.env.VITE_nombre_variable y en el backend process.env.nombre_variable
+- Todas mis peticiones apuntan a http://localhost:3000/api/usuarios
+- Puedo crear una variable de axios
+- Creo la carpeta config en el frontend, en src
+- Creo el archivo clienteAxios.jsx
+
+~~~js
+import axios from 'axios'
+
+const clienteAxios = axios.create({
+    baseURL: `${import.meta.env.VITE_BACKEND_URL}/api`
+})
+
+export default clienteAxios
+~~~
+
+- Ahora solo tengo que usarlo. En los get debo añadir .get
+
+~~~js
+const {data}  = await clienteAxios.post('/usuarios', {nombre, password, email})
+~~~
+
+## NOTA: He tenido problemas para configurar en variables de entorno nodemailer. Lo dejo en crudo
+-----
+
+## Validando la autenticación
+
+- En el Login importo useState, Alerta y clienteAxios. También useNavigate de react-router-dom
+- Coloco los value y los onChange en los inputs con los state y setState
+- Creo el handleSubmit y lo coloco en el onSubmit del form
+- Hago la petición post en un try catch.
+- Por ahora hago un console.log de la data
+
+~~~js
+import { useState } from 'react'
+import {Link, useNavigate} from 'react-router-dom'
+import clienteAxios from '../config/clienteAxios'
+import Alerta from '../components/Alerta'
+
+const Login = () => {
+
+  const [email, setEmail] = useState("")
+  const [password, setPassword]= useState("")
+  const [alerta, setAlerta]= useState({})
+  
+  const handleSubmit = async (e)=>{
+    e.preventDefault()
+
+    if([email, password].includes("")){
+      setAlerta({
+        msg: "Todos los campos son obligatorios",
+        error: true
+      })
+      return  //importante este return para detener el código
+    }
+    try {
+      const {data}= await clienteAxios.post('/usuarios/login', {email, password})
+      setAlerta({})
+      localStorage.setItem('token', data.token)  //almaceno el token en el localStorage
+    } catch (error) {
+      setAlerta({
+        msg: error.response.data.msg,
+        error: true
+      })
+    }
+  }
+
+  const {msg} = alerta
+  return (
+    <>
+      <h1 className="text-orange-600 font-black text-6xl capitalize">Inicia sesión y administra tus
+      <span className="text-slate-700"> proyectos</span></h1>
+
+      {msg && <Alerta  alerta={alerta} />}
+      <form onSubmit={handleSubmit} 
+            className= "mt-10 bg-white shadow rounded-lg p-3">
+        <div className="my-3">
+          <label className="uppercase text-gray-600 block text-xl font-bold"
+                htmlFor="email">Email</label>
+          <input value={email}
+                 onChange={e=>setEmail(e.target.value)}
+                 type="email"
+                 id="email"
+                 placeholder="Email de registro"
+                 className="w-full mt-3 p-3 border rounded-xl bg-gray-50"  />
+        </div>
+        <div className="my-5">
+          <label className="uppercase text-gray-600 block text-xl font-bold"
+                htmlFor="password">Password</label>
+          <input value={password}
+                 onChange={e=>setPassword(e.target.value)}
+                 type="password"
+                 id="password"
+                 placeholder="Escribe tu password"
+                 className="w-full mt-3 p-3 border rounded-xl bg-gray-50"  />
+        </div>
+
+        <input type="submit"
+                value="Iniciar Sesión"
+                className="bg-orange-600 w-full mb-5 text-white uppercase font-bold rounded p-3 hover:cursor-pointer
+                hover:bg-orange-700 transition-colors" />
+      </form>
+
+        <nav className="lg:flex lg:justify-between">
+          <Link to="/registrar"
+                className="block text-center my-5 text-slate-500 uppercase text-sm"
+          >¿No tienes una cuenta? Regístrate</Link>
+          <Link to="/olvide-password"
+                className="block text-center my-5 text-slate-500 uppercase text-sm"
+          >¿Olvidaste tu password? Recuperalo aquí</Link>
+        </nav>
+    </>
+  )
+}
+
+export default Login
+~~~
+
+- Si vamos al controlador de login veremos que generamos un nuevo JWT
+
+~~~js
+const login = async (req,res)=>{
+    const {email, password} = req.body
+
+    const usuario = await Usuario.findOne({email})
+
+    if(!usuario){
+        const error = new Error("Usuario no encontrado")
+       return res.status(400).json({msg: error.message})
+    }
+
+    if(!usuario.confirmado){
+        const error = new Error("Tu cuenta no ha sido confirmada")
+        return res.status(403).json({msg: error.message})
+    }
+
+    if(await usuario.comprobarPassword(password)){
+        return res.json({
+            _id: usuario._id,
+            nombre: usuario.nombre,
+            email: usuario.email,
+            token: generarJWT(usuario._id)
+        })
+    }else{
+        const error = new Error("El password es incorrecto")
+        return res.status(403).json({msg: error.message})
+    }    
+}
+~~~
+
+- Necesito el token para validar el usuario en diferentes sitios 
+- Quiero almacenar este token en el localStorage (en Chrome está en Application - LocalStorage)
+- Voy a colocar todo el objeto que obtengo de la petició a /usuarios/login en el context

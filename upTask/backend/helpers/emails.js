@@ -24,3 +24,19 @@ export const emailRegistro = async(datos)=>{
       `    
     })
 }
+
+export const emailOlvidePassword = async(datos)=>{
+  const {email, nombre, token} = datos
+  
+  const info = await transport.sendMail({
+    from: "UpTASK - Administrador de proyectos <cuentas@uptask.com",
+    to: email,
+    subject: "UpTASK - Recupera tu password",
+    text: "Comprueba tu cuenta en UpTASK",
+    html: `<p> Hola, ${nombre} </p>
+   <p>Recupera tu password de UpTASK. Para ello, solo debes hacer clic en el siguiente enlace: </p>
+   <a href="${process.env.STRING_CONNECTION_CORS2 }/olvide-password/${token}">Recuperar password</a>
+   <p>Si no quieres recuperar tu password, puedes ignorar el mensaje </p>
+    `    
+  })
+}
